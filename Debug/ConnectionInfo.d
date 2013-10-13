@@ -1,0 +1,1 @@
+ConnectionInfo.d: ../ConnectionInfo.cpp
