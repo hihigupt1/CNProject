@@ -45,7 +45,13 @@ public:
 	}
 	int getConnectionFd(string type)
 	{
-		return -1;
+		struct sockaddr_in myaddr;
+		fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+
+		if (fd < 0) {
+			perror("ERROR on accept");
+		}
+		return fd;
 	}
 
 	int getListeningFd(string type)

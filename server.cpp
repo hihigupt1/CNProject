@@ -20,137 +20,6 @@
 
 using namespace std;
 
-class Server
-{
-public:
-	const ConnectionInfo* getConnection() const {
-		return &connection;
-	}
-
-	string getName() const {
-		return name;
-	}
-
-	Server(string hostName, string port, string name)
-	{
-		this->connection.setHostname(hostName);
-		this->connection.setPort(port);
-		this->name = name;
-	}
-	virtual void startHosting() = 0;
-
-	ConnectionInfo connection;
-	string name;
-
-
-};
-
-class DirectorySrv : public Server
-{
-public:
-	DirectorySrv(string hostname,string port, string name) : Server(hostname,port,name)
-	{
-
-	}
-
-	void addFileHost(string name, string hostname,string port)
-	{
-		std::map<string,std::vector<ConnectionInfo> >::iterator it = this->mapping.find(name);
-		if(it != this->mapping.end())
-		{
-			ConnectionInfo* fileSrv = new ConnectionInfo();
-			fileSrv->setHostname(hostname);
-			fileSrv->setPort(port);
-			this->mapping[name].push_back(*fileSrv);
-		}
-		else
-		{
-			ConnectionInfo* fileSrv = new ConnectionInfo();
-			fileSrv->setHostname(hostname);
-			fileSrv->setPort(port);
-			vector<ConnectionInfo> *lst = new vector<ConnectionInfo>();
-			lst->push_back(*fileSrv);
-			this->mapping.insert( std::pair<string,vector<ConnectionInfo> >(name, *lst));
-		}
-
-	}
-
-	void getRegisterData(int fd)
-	{
-		char buf[BUFLEN] = {0};
-		int count =3,recv_len;
-		//keep listening for data
-		while(count--)
-		{
-			printf("Waiting for data...");
-			fflush(stdout);
-
-			//try to receive some data, this is a blocking call
-			if ((recv_len = recv(fd, buf, BUFLEN, 0)) == -1)   // read datagram from server socket
-			{
-				perror("recv()");
-			}
-			buf[recv_len-1] = '\0';
-			char* file =strtok(buf," ");
-			while(file != NULL)
-			{
-				char *host,*port;
-				host = strtok(NULL," ");
-				port = strtok(NULL," ");
-				addFileHost(file,host,port);
-				file = strtok(NULL," ");
-			}
-
-			//print details of the client/peer and the data received
-			printf("Received packet from %s\n", buf);
-
-		}
-
-	}
-
-	/*
-	 * 1) Get Register data.
-	 * 2) Start accepting client queries.
-	 */
-	void startHosting()
-	{
-		int ret = fork();
-		if(ret == 0)
-		{
-			int fd = connection.getListeningFd("udp");
-			getRegisterData(fd);
-			printReg();
-		}
-
-
-	}
-
-	void printReg()
-	{
-
-		typedef map<string,vector<ConnectionInfo> >::iterator MapIterator;
-		for (MapIterator iter = mapping.begin(); iter != mapping.end(); iter++)
-		{
-			cout << "File " << iter->first << endl;
-
-			typedef vector<ConnectionInfo>::iterator ListIterator;
-			for (ListIterator list_iter = iter->second.begin(); list_iter != iter->second.end(); list_iter++)
-			{
-				ConnectionInfo *temp = &*list_iter;
-				cout << " host:port" << temp->getHostname()<<":"<<temp->getPort()<<endl;
-
-			}
-
-		}
-
-
-
-	}
-
-private:
-	map<string,vector<ConnectionInfo> > mapping;
-
-};
 
 class FileServer : public Server
 {
@@ -172,6 +41,8 @@ public:
 	{
 		int fd = dirSrv.getConnectionFd("udp");
 		sendFileInfo(fd);
+		cout<<fd<<endl;
+		dirSrv.resetFd();
 	}
 
 	void sendFileInfo(int fd)
@@ -179,6 +50,19 @@ public:
 		/**
 		 * Format to send <filename> <host> <port>
 		 */
+		string host = getConnection()->getHostIp();
+		string port = getConnection()->getPort();
+		string srvhost = dirSrv.getHostIp();
+		string srvport = dirSrv.getPort();
+
+		struct sockaddr_in servAddr;
+		memset((char *)&servAddr, 0, sizeof(servAddr));
+		servAddr.sin_family = AF_INET;
+		servAddr.sin_port = htons(atoi(srvport.c_str()));
+		inet_aton(srvhost.c_str(), &(servAddr.sin_addr));
+		char Message[BUFLEN];
+		snprintf(Message,BUFLEN,"%s %s\n",this->getName().c_str(),port.c_str());
+		int ret = sendto(fd,Message,strlen(Message),0,(struct sockaddr *)&servAddr,sizeof(servAddr));
 
 	}
 
@@ -207,47 +91,7 @@ public:
 
 void initFileSrv(FileServer* f1,FileServer* f2,FileServer* f3)
 {
-	/*
-	 * 1) File open
-	 * 2) Read per line.
-	 * 3) Which file server, take that object and then call addtoHostFile on that object.
-	 * <>.txt
-	 * Server: doc1 doc2 doc3
-	 */
-	ifstream infile;
-	infile.open("input.txt");
-	cout<<"Reading from file"<<endl;
-	string lineStringfromInput;
-	char *stringToken;
-	char dlim[] = " ";
-	while(getline(infile, lineStringfromInput)){
-		char* srvName;
-		srvName =strtok((char* )lineStringfromInput.c_str(), dlim);
-		stringToken=strtok(NULL, dlim);
-		//cout<<"Number of file on server 1"<<st<<endl;
-		int n = atoi(stringToken);
-		if(strcmp(srvName,f1->getName().c_str()) == 0){
-			for(int i= 0; i<n; i ++){
-				stringToken=strtok(NULL, dlim);
-				f1->addFileToHost(stringToken);
-			}
 
-		}
-		else if(strcmp(srvName,f2->getName().c_str())== 0){
-			for(int i =0; i<n;i++){
-				stringToken=strtok(NULL,dlim);
-				f2->addFileToHost(stringToken);
-			}
-
-		}
-		else {
-			for(int i =0; i<n;i++){
-				stringToken=strtok(NULL,dlim);
-				f3->addFileToHost(stringToken);
-			}
-		}
-
-	}
 
 }
 
@@ -257,22 +101,16 @@ void initFileSrv(FileServer* f1,FileServer* f2,FileServer* f3)
 
 int main()
 {
-
-	DirectorySrv* dr = new DirectorySrv("","8888","Dr");
-	dr->startHosting();
-	const ConnectionInfo *drConInfo = dr->getConnection();
-	FileServer* fileSrv1 = new FileServer("","","File_Server1",*drConInfo);
-	FileServer* fileSrv2 = new FileServer("","","File_Server2",*drConInfo);
-	FileServer* fileSrv3 = new FileServer("","","File_Server3",*drConInfo);
-	initFileSrv(fileSrv1,fileSrv2,fileSrv3);
-	fileSrv1->printFileShared();
-	fileSrv2->printFileShared();
-	fileSrv3->printFileShared();
+	ConnectionInfo drConInfo;
+	drConInfo.setHostname(DrSrv);
+	drConInfo.setHostIp(DrSrv);
+	drConInfo.setPort(DrSrvPort);
+	FileServer* fileSrv1 = new FileServer(Serv1,Serv1Port,"File_Server1",drConInfo);
+	FileServer* fileSrv2 = new FileServer(Serv2,Serv2Port,"File_Server2",drConInfo);
+	FileServer* fileSrv3 = new FileServer(Serv3,Serv3Port,"File_Server3",drConInfo);
+//
 	fileSrv1->startHosting();
 	fileSrv2->startHosting();
 	fileSrv3->startHosting();
-	/*
-	 *client * cl1 = new client();
-	 *client * cl2 = new Client();
-	 */
+
 }

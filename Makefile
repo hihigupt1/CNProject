@@ -1,10 +1,16 @@
-all: client.o connection.o server.o
-	g++ -o start client.o ConnectionInfo.o server.o -lsocket
-client.o: client.cpp fileshare.h
-	g++ -c -g client.cpp
+all: drserver server client
+	
+client: client.cpp fileshare.h connection.o
+	g++ -o client -g client.cpp ConnectionInfo.o
+	
+server: server.cpp  fileshare.h connection.o
+	g++ -o server -g server.cpp ConnectionInfo.o
+	
+drserver: directory_server.cpp fileshare.h connection.o
+	g++ -g -o drserver directory_server.cpp ConnectionInfo.o
+	
 connection.o: ConnectionInfo.cpp fileshare.h
 	g++ -c -g ConnectionInfo.cpp
-server.o: server.cpp  fileshare.h
-	g++ -c -g server.cpp
+	
 clean:
-	rm *.o
+	rm *.o drserver server client
